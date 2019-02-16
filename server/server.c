@@ -136,7 +136,6 @@ void *handle_request(void *request_args)
 
     struct request_args *args = (struct request_args *)request_args;
     int childfd = args->childfd;
-    printf("%d\n", childfd);
     struct sockaddr_in clientaddr = args->clientaddr;
     free(request_args);
 
@@ -298,8 +297,6 @@ int main(int argc, char **argv)
         struct request_args *args = malloc(sizeof(struct request_args));
         args->childfd = childfd;
         args->clientaddr = clientaddr;
-
-        printf("%d\n", childfd);
 
         if (option == 'f') /* multi-processing */
         {
