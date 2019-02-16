@@ -32,7 +32,8 @@ struct timeval start_time, curr_time;
 
 extern char **environ; /* the environment */
 
-struct request_args {
+struct request_args
+{
     int childfd;
     struct sockaddr_in clientaddr;
 };
@@ -119,7 +120,7 @@ void handle_zombie(int sig)
         ;
 }
 
-void *handle_request(void* request_args)
+void *handle_request(void *request_args)
 {
     FILE *stream;           /* stream version of childfd */
     char buf[BUFSIZE];      /* message buffer */
@@ -133,7 +134,7 @@ void *handle_request(void* request_args)
     int is_static;          /* static request? */
     long filesize;          /* file size */
 
-    struct request_args* args = (struct request_args*) request_args;
+    struct request_args *args = (struct request_args *)request_args;
     int childfd = args->childfd;
     printf("%d\n", childfd);
     struct sockaddr_in clientaddr = args->clientaddr;
@@ -310,14 +311,16 @@ int main(int argc, char **argv)
             }
             // parent
             close(childfd);
-        } else if (option == 't') {
-            	pthread_t tid;
-				pthread_attr_t attr;
+        }
+        else if (option == 't')
+        {
+            pthread_t tid;
+            pthread_attr_t attr;
 
-				pthread_attr_init( &attr );
-				pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+            pthread_attr_init(&attr);
+            pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
 
-				pthread_create(&tid, &attr, handle_request, args);
+            pthread_create(&tid, &attr, handle_request, args);
         }
         else
         {
