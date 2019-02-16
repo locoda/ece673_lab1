@@ -238,7 +238,8 @@ int main(int argc, char **argv)
         exit(1);
     }
     portno = atoi(argv[1]);
-    option = argv[2][1];
+    if (argc == 3)
+        option = argv[2][1];
 
     /* Handle Zombie Processes*/
     struct sigaction sa_child;
