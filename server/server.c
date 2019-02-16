@@ -11,6 +11,7 @@
 #include <string.h>
 #include <netdb.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -30,6 +31,11 @@ long counter; /* global counter for total transactions */
 struct timeval start_time, curr_time;
 
 extern char **environ; /* the environment */
+
+struct request_args {
+    int childfd;
+    struct sockaddr_in clientaddr;
+};
 
 /*
  * error - wrapper for perror used for bad syscalls
@@ -113,7 +119,7 @@ void handle_zombie(int sig)
         ;
 }
 
-void handle_request(int childfd, struct sockaddr_in clientaddr)
+void *handle_request(void* request_args)
 {
     FILE *stream;           /* stream version of childfd */
     char buf[BUFSIZE];      /* message buffer */
@@ -126,6 +132,12 @@ void handle_request(int childfd, struct sockaddr_in clientaddr)
     char *p;                /* temporary pointer */
     int is_static;          /* static request? */
     long filesize;          /* file size */
+
+    struct request_args* args = (struct request_args*) request_args;
+    int childfd = args->childfd;
+    printf("%d\n", childfd);
+    struct sockaddr_in clientaddr = args->clientaddr;
+    free(request_args);
 
     char client_ipAddr[20];
     struct sockaddr_in *pV4Addr = (struct sockaddr_in *)&clientaddr;
@@ -148,7 +160,7 @@ void handle_request(int childfd, struct sockaddr_in clientaddr)
                "ECE673 does not implement this method");
         fclose(stream);
         close(childfd);
-        return;
+        return 0;
     }
 
     /* read (and ignore) the HTTP headers */
@@ -195,12 +207,11 @@ void handle_request(int childfd, struct sockaddr_in clientaddr)
 
     /* clean up */
     fclose(stream);
-    return;
+    return 0;
 }
 
 int main(int argc, char **argv)
 {
-
     /* variables for connection management */
     int parentfd;                  /* parent socket */
     int childfd;                   /* child socket */
@@ -283,21 +294,36 @@ int main(int argc, char **argv)
         if (counter == 0)
             gettimeofday(&start_time, NULL);
 
+        struct request_args *args = malloc(sizeof(struct request_args));
+        args->childfd = childfd;
+        args->clientaddr = clientaddr;
+
+        printf("%d\n", childfd);
+
         if (option == 'f') /* multi-processing */
         {
             if (fork() == 0)
             { // child
-                handle_request(childfd, clientaddr);
+                handle_request(args);
                 close(childfd);
                 exit(0);
             }
+            // parent
+            close(childfd);
+        } else if (option == 't') {
+            	pthread_t tid;
+				pthread_attr_t attr;
+
+				pthread_attr_init( &attr );
+				pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+
+				pthread_create(&tid, &attr, handle_request, args);
         }
         else
         {
-            handle_request(childfd, clientaddr);
+            handle_request(args);
+            close(childfd);
         }
-
-        close(childfd);
         counter++;
         if (counter % 1000 == 0)
         {
