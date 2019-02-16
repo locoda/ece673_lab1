@@ -107,21 +107,14 @@ char *load_content(char *filename, long *filesize)
     return addr;
 }
 
-int main(int argc, char **argv)
+void handle_zombie(int sig)
 {
+    while (waitpid(-1, NULL, WNOHANG) > 0)
+        ;
+}
 
-    /* variables for connection management */
-    int parentfd;                  /* parent socket */
-    int childfd;                   /* child socket */
-    int portno;                    /* port to listen on */
-    int clientlen;                 /* byte size of client's address */
-    struct hostent *hostp;         /* client host info */
-    char *hostaddrp;               /* dotted decimal host addr string */
-    int optval;                    /* flag value for setsockopt */
-    struct sockaddr_in serveraddr; /* server's addr */
-    struct sockaddr_in clientaddr; /* client addr */
-
-    /* variables for connection I/O */
+void handle_request(int childfd, struct sockaddr_in clientaddr)
+{
     FILE *stream;           /* stream version of childfd */
     char buf[BUFSIZE];      /* message buffer */
     char method[BUFSIZE];   /* request method */
@@ -132,21 +125,120 @@ int main(int argc, char **argv)
     char cgiargs[BUFSIZE];  /* cgi argument list */
     char *p;                /* temporary pointer */
     int is_static;          /* static request? */
-    struct stat sbuf;       /* file status */
-    int fd;                 /* static content filedes */
-    int pid;                /* process id from fork */
-    int wait_status;        /* status from wait */
+    long filesize;          /* file size */
 
-    long filesize; /* file size */
-    long duration; /* duration from start_time to curr_time */
+    char client_ipAddr[20];
+    struct sockaddr_in *pV4Addr = (struct sockaddr_in *)&clientaddr;
+    struct in_addr ipAddr = pV4Addr->sin_addr;
+    inet_ntop(AF_INET, &ipAddr, client_ipAddr, INET_ADDRSTRLEN);
+    // printf("DEBUG: host address %s\n", client_ipAddr);
+
+    /* open the child socket descriptor as a stream */
+    if ((stream = fdopen(childfd, "r+")) == NULL)
+        error("ERROR on fdopen");
+
+    /* get the HTTP request line */
+    fgets(buf, BUFSIZE, stream);
+    sscanf(buf, "%s %s %s\n", method, uri, version);
+
+    /* only support the GET method */
+    if (strcasecmp(method, "GET"))
+    {
+        cerror(stream, method, "501", "Not Implemented",
+               "ECE673 does not implement this method");
+        fclose(stream);
+        close(childfd);
+        return;
+    }
+
+    /* read (and ignore) the HTTP headers */
+    fgets(buf, BUFSIZE, stream);
+    while (strcmp(buf, "\r\n"))
+    {
+        fgets(buf, BUFSIZE, stream);
+    }
+
+    /* parse the uri */
+    if (!strstr(uri, "cgi-bin"))
+    { /* static content */
+        is_static = 1;
+        strcpy(cgiargs, "");
+        strcpy(filename, ".");
+        strcat(filename, uri);
+        if (uri[strlen(uri) - 1] == '/')
+            strcat(filename, "index.html");
+    }
+    else
+    { /* ignore requests for dynamic content */
+        is_static = 0;
+    }
+
+    /* make sure the file exists */
+
+    /* serve static content */
+    if (is_static)
+    {
+
+        // printf("DEBUG: filename %s\n", filename);
+
+        /* load content in terms of filename in uri */
+        p = load_content(filename, &filesize);
+
+        /* print response header */
+        fprintf(stream, "HTTP/1.0 200 OK\n");
+        fprintf(stream, "Server: ECE673 Web Server\n");
+        fprintf(stream, "\r\n");
+        fflush(stream);
+
+        fwrite(p, 1, filesize, stream);
+    }
+
+    /* clean up */
+    fclose(stream);
+    return;
+}
+
+int main(int argc, char **argv)
+{
+
+    /* variables for connection management */
+    int parentfd;                  /* parent socket */
+    int childfd;                   /* child socket */
+    int portno;                    /* port to listen on */
+    char option;                   /* server option */
+    int clientlen;                 /* byte size of client's address */
+    struct hostent *hostp;         /* client host info */
+    char *hostaddrp;               /* dotted decimal host addr string */
+    int optval;                    /* flag value for setsockopt */
+    struct sockaddr_in serveraddr; /* server's addr */
+    struct sockaddr_in clientaddr; /* client addr */
+
+    /* variables for connection I/O */
+    struct stat sbuf; /* file status */
+    int fd;           /* static content filedes */
+    int pid;          /* process id from fork */
+    int wait_status;  /* status from wait */
+    long duration;    /* duration from start_time to curr_time */
 
     /* check command line args */
-    if (argc != 2)
+    if (argc != 2 && argc != 3)
     {
-        fprintf(stderr, "usage: %s <port>\n", argv[0]);
+        fprintf(stderr, "usage: %s <port> [-<option>]\n", argv[0]);
         exit(1);
     }
     portno = atoi(argv[1]);
+    option = argv[2][1];
+
+    /* Handle Zombie Processes*/
+    struct sigaction sa_child;
+    sa_child.sa_handler = handle_zombie;
+    sa_child.sa_flags = SA_RESTART;
+    sigemptyset(&sa_child.sa_mask);
+    if (sigaction(SIGCHLD, &sa_child, NULL) == -1)
+    {
+        perror("sigchild action");
+        exit(1);
+    }
 
     /* read the size of files from configuration file */
     read_cfg("config_srv.txt");
@@ -191,76 +283,21 @@ int main(int argc, char **argv)
         if (counter == 0)
             gettimeofday(&start_time, NULL);
 
-        char client_ipAddr[20];
-        struct sockaddr_in *pV4Addr = (struct sockaddr_in *)&clientaddr;
-        struct in_addr ipAddr = pV4Addr->sin_addr;
-        inet_ntop(AF_INET, &ipAddr, client_ipAddr, INET_ADDRSTRLEN);
-        // printf("DEBUG: host address %s\n", client_ipAddr);
-
-        /* open the child socket descriptor as a stream */
-        if ((stream = fdopen(childfd, "r+")) == NULL)
-            error("ERROR on fdopen");
-
-        /* get the HTTP request line */
-        fgets(buf, BUFSIZE, stream);
-        sscanf(buf, "%s %s %s\n", method, uri, version);
-
-        /* only support the GET method */
-        if (strcasecmp(method, "GET"))
+        if (option == 'f') /* multi-processing */
         {
-            cerror(stream, method, "501", "Not Implemented",
-                   "ECE673 does not implement this method");
-            fclose(stream);
-            close(childfd);
-            continue;
-        }
-
-        /* read (and ignore) the HTTP headers */
-        fgets(buf, BUFSIZE, stream);
-        while (strcmp(buf, "\r\n"))
-        {
-            fgets(buf, BUFSIZE, stream);
-        }
-
-        /* parse the uri */
-        if (!strstr(uri, "cgi-bin"))
-        { /* static content */
-            is_static = 1;
-            strcpy(cgiargs, "");
-            strcpy(filename, ".");
-            strcat(filename, uri);
-            if (uri[strlen(uri) - 1] == '/')
-                strcat(filename, "index.html");
+            if (fork() == 0)
+            { // child
+                handle_request(childfd, clientaddr);
+                close(childfd);
+                exit(0);
+            }
         }
         else
-        { /* ignore requests for dynamic content */
-            is_static = 0;
-        }
-
-        /* make sure the file exists */
-
-        /* serve static content */
-        if (is_static)
         {
-
-            // printf("DEBUG: filename %s\n", filename);
-
-            /* load content in terms of filename in uri */
-            p = load_content(filename, &filesize);
-
-            /* print response header */
-            fprintf(stream, "HTTP/1.0 200 OK\n");
-            fprintf(stream, "Server: ECE673 Web Server\n");
-            fprintf(stream, "\r\n");
-            fflush(stream);
-
-            fwrite(p, 1, filesize, stream);
+            handle_request(childfd, clientaddr);
         }
 
-        /* clean up */
-        fclose(stream);
         close(childfd);
-
         counter++;
         if (counter % 1000 == 0)
         {
