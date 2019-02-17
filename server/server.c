@@ -319,6 +319,8 @@ int main(int argc, char **argv)
             pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
 
             pthread_create(&tid, &attr, handle_request, args);
+            if (pthread_join (tid, NULL)) 
+                close(childfd);
         }
         else
         {
