@@ -231,6 +231,10 @@ int main(int argc, char **argv)
     int wait_status;  /* status from wait */
     long duration;    /* duration from start_time to curr_time */
 
+    /* variables for print statistics */
+    pid_t command_pid = getpid();
+    char *command = (char*)malloc(100 * sizeof(char));
+
     /* check command line args */
     if (argc != 2 && argc != 3)
     {
@@ -332,7 +336,20 @@ int main(int argc, char **argv)
         {
             gettimeofday(&curr_time, NULL);
             duration = ((curr_time.tv_sec * 1000000 + curr_time.tv_usec) - (start_time.tv_sec * 1000000 + start_time.tv_usec));
+            printf("Request Count:  %ld\n", counter);
             printf("Avg req rate: %lf per second\n", 1000000.0 * counter / duration);
+            printf("Disk Utilitiy: \n");
+            int status = system("cat /sys/block/sda/stat");
+            sprintf(command, "ps -p %d -o pcpu,pmem", command_pid);
+            status = system(command);
+            printf("\n");
+
+            if (counter == 10000) {
+                printf("Context Switches:\n");
+                sprintf(command, "cat /proc/%d/status | grep ctxt", command_pid);
+                status = system(command);
+                return 0;
+            }
         }
     }
 }
