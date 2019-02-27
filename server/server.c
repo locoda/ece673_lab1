@@ -295,7 +295,7 @@ int main(int argc, char **argv)
     clientlen = sizeof(clientaddr);
     threadpool thpool;
     if (option == 't')
-        thpool = thpool_init(50);
+        thpool = thpool_init(8);
 
     while (1)
     {
