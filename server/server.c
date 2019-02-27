@@ -21,6 +21,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "thpool.h"
+
 #define BUFSIZE 1024
 #define MAXERRS 16
 #define HT_SIZE 10000
@@ -31,6 +33,8 @@ long counter; /* global counter for total transactions */
 struct timeval start_time, curr_time;
 
 extern char **environ; /* the environment */
+
+pthread_mutex_t lock;
 
 struct request_args
 {
@@ -84,10 +88,7 @@ void read_cfg(char *filename)
     unsigned long filesize;
 
     if ((fptr = fopen(filename, "r")) == NULL)
-    {
-        printf("Error! opening file");
-        exit(1);
-    }
+        error("Error! opening file\n");
 
     i = 0;
     while (fscanf(fptr, "%lu", &filesize) != EOF)
@@ -170,6 +171,8 @@ void *handle_request(void *request_args)
         fgets(buf, BUFSIZE, stream);
     }
 
+    // printf("%s %s %s\n", method, uri, version);
+
     /* parse the uri */
     if (!strstr(uri, "cgi-bin"))
     { /* static content */
@@ -186,7 +189,7 @@ void *handle_request(void *request_args)
     }
 
     /* make sure the file exists */
-
+    // printf("%s\n", uri);
     /* serve static content */
     if (is_static)
     {
@@ -233,10 +236,10 @@ int main(int argc, char **argv)
 
     /* variables for print statistics */
     pid_t command_pid = getpid();
-    char *command = (char*)malloc(100 * sizeof(char));
+    char *command = (char *)malloc(100 * sizeof(char));
     printf("Disk Utilitiy: \n");
     int status = system("cat /sys/block/sda/stat");
-    
+
     /* check command line args */
     if (argc != 2 && argc != 3)
     {
@@ -290,6 +293,10 @@ int main(int argc, char **argv)
      */
     counter = 0;
     clientlen = sizeof(clientaddr);
+    threadpool thpool;
+    if (option == 't')
+        thpool = thpool_init(50);
+
     while (1)
     {
 
@@ -318,15 +325,16 @@ int main(int argc, char **argv)
         }
         else if (option == 't')
         {
-            pthread_t tid;
-            pthread_attr_t attr;
+            // pthread_t tid;
+            // pthread_attr_t attr;
 
-            pthread_attr_init(&attr);
-            pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+            // pthread_attr_init(&attr);
+            // pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
 
-            pthread_create(&tid, &attr, handle_request, args);
-            if (pthread_join (tid, NULL)) 
-                close(childfd);
+            // pthread_create(&tid, &attr, handle_request, args);
+            // if (pthread_join(tid, NULL))
+            //     close(childfd);
+            thpool_add_work(thpool, (void *)handle_request, args);
         }
         else
         {
@@ -334,7 +342,7 @@ int main(int argc, char **argv)
             close(childfd);
         }
         counter++;
-        if (counter % 1000 == 0)
+        if (counter % 10000 == 0)
         {
             gettimeofday(&curr_time, NULL);
             duration = ((curr_time.tv_sec * 1000000 + curr_time.tv_usec) - (start_time.tv_sec * 1000000 + start_time.tv_usec));
@@ -344,13 +352,14 @@ int main(int argc, char **argv)
             status = system(command);
             printf("\n");
 
-            if (counter == 10000) {
+            if (counter % 100000 == 0)
+            {
                 printf("Disk Utilitiy: \n");
                 status = system("cat /sys/block/sda/stat");
                 printf("Context Switches:\n");
                 sprintf(command, "cat /proc/%d/status | grep ctxt", command_pid);
                 status = system(command);
-                return 0;
+                // return 0;
             }
         }
     }
