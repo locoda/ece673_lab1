@@ -147,8 +147,11 @@ void *handle_request(void *request_args)
     // printf("DEBUG: host address %s\n", client_ipAddr);
 
     /* open the child socket descriptor as a stream */
-    if ((stream = fdopen(childfd, "r+")) == NULL)
-        error("ERROR on fdopen");
+    if ((stream = fdopen(childfd, "r+")) == NULL) {
+        // perror("ERROR on fdopen");
+        close(childfd);
+        return(0);
+    }
 
     /* get the HTTP request line */
     fgets(buf, BUFSIZE, stream);
@@ -302,8 +305,13 @@ int main(int argc, char **argv)
 
         /* wait for a connection request */
         childfd = accept(parentfd, (struct sockaddr *)&clientaddr, &clientlen);
-        if (childfd < 0)
-            error("ERROR on accept");
+        if (childfd < 0) {
+            // perror("ERROR on accept");
+            int n = sysconf(_SC_OPEN_MAX);
+            for(int i = parentfd + 1; i < n; i++)
+                close(i);
+            continue;
+        }
 
         if (counter == 0)
             gettimeofday(&start_time, NULL);
@@ -359,6 +367,9 @@ int main(int argc, char **argv)
                 printf("Context Switches:\n");
                 sprintf(command, "cat /proc/%d/status | grep ctxt", command_pid);
                 status = system(command);
+                printf("Total Seconds: %lf\n", duration / 1000000.0);
+                // if (option == 't')
+                //     thpool_destroy(thpool);
                 // return 0;
             }
         }
