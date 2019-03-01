@@ -147,14 +147,17 @@ void *handle_request(void *request_args)
     // printf("DEBUG: host address %s\n", client_ipAddr);
 
     /* open the child socket descriptor as a stream */
-    if ((stream = fdopen(childfd, "r+")) == NULL) {
-        // perror("ERROR on fdopen");
-        close(childfd);
-        return(0);
-    }
+    // if ((stream = fdopen(childfd, "r+")) == NULL)
+    // {
+    //     perror("ERROR on fdopen");
+    //     // fclose(stream);
+    //     close(childfd);
+    //     return 0;
+    // }
 
     /* get the HTTP request line */
-    fgets(buf, BUFSIZE, stream);
+    // fgets(buf, BUFSIZE, stream);
+    read(childfd, buf, BUFSIZE);
     sscanf(buf, "%s %s %s\n", method, uri, version);
 
     /* only support the GET method */
@@ -162,17 +165,17 @@ void *handle_request(void *request_args)
     {
         cerror(stream, method, "501", "Not Implemented",
                "ECE673 does not implement this method");
-        fclose(stream);
+        // fclose(stream);
         close(childfd);
         return 0;
     }
 
     /* read (and ignore) the HTTP headers */
-    fgets(buf, BUFSIZE, stream);
-    while (strcmp(buf, "\r\n"))
-    {
-        fgets(buf, BUFSIZE, stream);
-    }
+    // fgets(buf, BUFSIZE, stream);
+    // while (strcmp(buf, "\r\n"))
+    // {
+    //     fgets(buf, BUFSIZE, stream);
+    // }
 
     // printf("%s %s %s\n", method, uri, version);
 
@@ -203,16 +206,22 @@ void *handle_request(void *request_args)
         p = load_content(filename, &filesize);
 
         /* print response header */
-        fprintf(stream, "HTTP/1.0 200 OK\n");
-        fprintf(stream, "Server: ECE673 Web Server\n");
-        fprintf(stream, "\r\n");
-        fflush(stream);
+        // fprintf(stream, "HTTP/1.0 200 OK\n");
+        // fprintf(stream, "Server: ECE673 Web Server\n");
+        // fprintf(stream, "\r\n");
+        // fflush(stream);
 
-        fwrite(p, 1, filesize, stream);
+        // fwrite(p, 1, filesize, stream);
+
+        write(childfd, "HTTP/1.0 200 OK\n", strlen("HTTP/1.0 200 OK\n"));
+        write(childfd, "Server: ECE673 Web Server\n", strlen("Server: ECE673 Web Server\n"));
+        write(childfd, "\r\n", strlen("\r\n"));
+        write(childfd, p, filesize);
     }
 
     /* clean up */
-    fclose(stream);
+    // fclose(stream);
+    close(childfd);
     return 0;
 }
 
@@ -305,11 +314,11 @@ int main(int argc, char **argv)
 
         /* wait for a connection request */
         childfd = accept(parentfd, (struct sockaddr *)&clientaddr, &clientlen);
-        if (childfd < 0) {
+        if (childfd < 0)
+        {
             // perror("ERROR on accept");
-            int n = sysconf(_SC_OPEN_MAX);
-            for(int i = parentfd + 1; i < n; i++)
-                close(i);
+            if (option == 't') 
+                thpool_wait(thpool);
             continue;
         }
 
